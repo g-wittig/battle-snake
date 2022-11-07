@@ -49,10 +49,7 @@ function move(gameState: GameState): MoveResponse {
   const mySnake = gameState.you;
   const myHead = mySnake.body[0];
   const myTail = mySnake.body[mySnake.body.length - 1];
-  const allSnakes = gameState.board.snakes;
   const enemySnakeHeads: Coord[] = [];
-  const maxValueY = gameState.board.height - 1; // board coordinates are zero indexed
-  const maxValueX = gameState.board.width - 1; // board coordinates are zero indexed
   const foodSpaces = gameState.board.food;
 
   let isMoveSafe: { [key: string]: boolean; } = {
@@ -62,68 +59,21 @@ function move(gameState: GameState): MoveResponse {
     right: true
   };
 
-  const nearbySpaces: { [key: string]: Coord; } = {
-    up: { ...myHead, y: myHead.y + 1},
-    down: { ...myHead, y: myHead.y - 1},
-    left: { ...myHead, x: myHead.x - 1},
-    right: { ...myHead, x: myHead.x + 1},
+  const nearbySpaces: { [key: string]: (DisplayBoardSpace|null); } = {
+    up: getSpaceByCoordinates(displayBoard, myHead.x, myHead.y + 1),
+    down: getSpaceByCoordinates(displayBoard, myHead.x, myHead.y - 1),
+    left: getSpaceByCoordinates(displayBoard, myHead.x - 1, myHead.y),
+    right: getSpaceByCoordinates(displayBoard, myHead.x + 1, myHead.y),
   };
 
-  // Only do path finding if there are hazards (ex. maze), doing this path finding on an open grid takes way to much effort
-  if (shouldPathFind(gameState)) {
-    // this should contain up to the 4 directions ( up, down, left, right), and a path array?
-    let theRecord: any = {}; // get an actual type for this later.....
-    theRecord['up'] = recursivePathFinding(displayBoard, theRecord, 'up', myHead.x, myHead.y + 1);
-    theRecord['down'] = recursivePathFinding(displayBoard, theRecord, 'down', myHead.x, myHead.y - 1);
-    theRecord['left'] = recursivePathFinding(displayBoard, theRecord, 'left', myHead.x - 1, myHead.y);
-    theRecord['right'] = recursivePathFinding(displayBoard, theRecord, 'right', myHead.x + 1, myHead.y);
-    console.log('the record after recuse', theRecord)
-    const shortestPath = getShortestPathFromRecord(theRecord);
-    console.log('shortest determined path is:', shortestPath);
-    // TODO: this null check might be unecessary later if the code is improved.
-    if (shortestPath != null) {
-      const shortestDirection = Object.keys(shortestPath[0])[0];
-      console.log('found the shortest path to the food!')
-      console.log(`MOVE ${gameState.turn}: ${shortestDirection}`);
-      return { move: shortestDirection };
+  Object.entries(nearbySpaces).forEach(([direction, nearbySpace]) => {
+    if (nearbySpace == null || ['snake', 'hazard'].includes(nearbySpace.type)) {
+      // can't move off the board or into a snake or hazard
+      isMoveSafe[direction] = false;
     }
-  } 
-
-  // Get array of all currently blocked spaces, currently includes all snake bodies
-  let blockedSpaces: Coord[] = [];
-  for (let index = 0; index < allSnakes.length; index++) {
-    const snake = allSnakes[index];
-    if (snake.id != mySnake.id) {
-      // This is an enemy snake
-      enemySnakeHeads.push(snake.body[0])
-    }
-    // Add body of snake to blocked spaces
-    blockedSpaces = [...blockedSpaces, ...snake.body];
-  }
-  // Add hazards to blocked spaces
-  blockedSpaces = [...blockedSpaces, ...gameState.board.hazards];
-
-  // filter blockedSpaces to remove duplciate values (start of game as all parts of a snake in the same square)
-  blockedSpaces = blockedSpaces.filter((blockedSpace, index, self) => {
-    return self.findIndex(item => areCoordsEqual(item, blockedSpace)) === index
   });
 
   // Main movement logic:
-
-  // Loop through nearby spaces to check if they are they are safe to move:
-  Object.entries(nearbySpaces).forEach(([direction, nearbySpace]) => {
-    // Can't move in given direction beacuse that space is off of the board.
-    if ((nearbySpace.x < 0 || nearbySpace.x > maxValueX) || (nearbySpace.y < 0 || nearbySpace.y > maxValueY)) {
-      isMoveSafe[direction] = false;
-      return;
-    }
-
-    // if the current nearby space is found in the array of blocked spaces then we can't move there
-    if (blockedSpaces.findIndex(item => areCoordsEqual(item, nearbySpace)) != -1) {
-      isMoveSafe[direction] = false;
-      return;
-    }
-  });
 
   // Are there any safe moves left?
   const safeMoves = Object.keys(isMoveSafe).filter(key => isMoveSafe[key]);
@@ -133,7 +83,7 @@ function move(gameState: GameState): MoveResponse {
 
     Object.entries(nearbySpaces).forEach(([direction, nearbySpace]) => {
       // If own snake tail is on one of the nearby spaces try moving there as it should be safe unless you ate food last turn (fingers crossed)
-      if (areCoordsEqual(nearbySpace, myTail)) {
+      if (nearbySpace != null && areCoordsEqual(nearbySpace.coord, myTail)) {
         forcedDirection = direction;
       }
     });
@@ -145,6 +95,28 @@ function move(gameState: GameState): MoveResponse {
     return { move: safeMoves[0] };
   }
 
+  // // Only do path finding if there are hazards (ex. maze), doing this path finding on an open grid takes way to much effort
+  // if (shouldPathFind(gameState)) {
+  //   // this should contain up to the 4 directions ( up, down, left, right), and a path array?
+  //   let theRecord: any = {}; // get an actual type for this later.....
+  //   theRecord['up'] = recursivePathFinding(displayBoard, theRecord, 'up', myHead.x, myHead.y + 1);
+  //   theRecord['down'] = recursivePathFinding(displayBoard, theRecord, 'down', myHead.x, myHead.y - 1);
+  //   theRecord['left'] = recursivePathFinding(displayBoard, theRecord, 'left', myHead.x - 1, myHead.y);
+  //   theRecord['right'] = recursivePathFinding(displayBoard, theRecord, 'right', myHead.x + 1, myHead.y);
+  //   console.log('the record after recuse', theRecord)
+  //   const shortestPath = getShortestPathFromRecord(theRecord);
+  //   console.log('shortest determined path is:', shortestPath);
+  //   // TODO: this null check might be unecessary later if the code is improved.
+  //   if (shortestPath != null) {
+  //     const shortestDirection = Object.keys(shortestPath[0])[0];
+  //     console.log('found the shortest path to the food!')
+  //     console.log(`MOVE ${gameState.turn}: ${shortestDirection}`);
+  //     return { move: shortestDirection };
+  //   }
+  // }
+
+  recursivelyFindSafePathWithMaxDepth(displayBoard, myHead, 9);
+
   // Only run food logic if there is food on the board.
   if (foodSpaces.length != 0) {
     const minimumFoodMovesPerDirection: { [key: string]: number; } = {};
@@ -152,13 +124,15 @@ function move(gameState: GameState): MoveResponse {
     // For given safe moves, see which move makes you closest to a piece of food and move that way?
     safeMoves.forEach(direction => {
       const nearbySpace = nearbySpaces[direction];
-      // set to max amount of board movement as a default value
-      minimumFoodMovesPerDirection[direction] = gameState.board.height * gameState.board.width;
-      foodSpaces.forEach(foodSpace => {
-        const numberOfMoves = directMovementBetweenCoords(nearbySpace, foodSpace);
-        minimumFoodMovesPerDirection[direction] = Math.min(minimumFoodMovesPerDirection[direction], numberOfMoves);
-      });
-    })
+      if (nearbySpace != null) {
+        // set to max amount of board movement as a default value
+        minimumFoodMovesPerDirection[direction] = gameState.board.height * gameState.board.width;
+        foodSpaces.forEach(foodSpace => {
+          const numberOfMoves = distanceBetweenCoords(nearbySpace.coord, foodSpace);
+          minimumFoodMovesPerDirection[direction] = Math.min(minimumFoodMovesPerDirection[direction], numberOfMoves);
+        });
+      }
+    });
     const sortedFoodMoves = Object.entries(minimumFoodMovesPerDirection).sort((a, b) => a[1] - b[1]);
 
     for (let index = 0; index < sortedFoodMoves.length; index++) {
@@ -166,7 +140,7 @@ function move(gameState: GameState): MoveResponse {
       const direction = foodMove[0];
       const nearbySpace = nearbySpaces[direction];
   
-      if (!isSpaceNextToEnemySnakeHead(nearbySpace, enemySnakeHeads)) {
+      if (nearbySpace != null && !isSpaceNextToEnemySnakeHead(nearbySpace.coord, enemySnakeHeads)) {
         // Food is on a nearby space and there isn't an enemy snake that could move to that space.
         console.log(`MOVE ${gameState.turn}: ${direction}`);
         return { move: direction };
@@ -176,7 +150,6 @@ function move(gameState: GameState): MoveResponse {
 
   // If there was no 'safe' direction to take towards a piece of food, randomly move in any direction determined as safe:
   const nextMove = safeMoves[Math.floor(Math.random() * safeMoves.length)];
-
   console.log(`MOVE ${gameState.turn}: ${nextMove} - Random Direction`)
   return { move: nextMove };
 }
@@ -190,7 +163,7 @@ runServer({
 
 const areCoordsEqual = (coord1: Coord, coord2: Coord): boolean => coord1.x == coord2.x && coord1.y == coord2.y;
 
-const directMovementBetweenCoords = (start: Coord, end: Coord): number => {
+const distanceBetweenCoords = (start: Coord, end: Coord): number => {
   const differenceX = Math.abs(start.x - end.x);
   const differenceY = Math.abs(start.y - end.y);
   return differenceX + differenceY;
@@ -199,7 +172,7 @@ const directMovementBetweenCoords = (start: Coord, end: Coord): number => {
 const isSpaceNextToEnemySnakeHead = (space: Coord, enemySnakeHeads: Coord[]): boolean => {
   for (let index = 0; index < enemySnakeHeads.length; index++) {
     const enemySnakeHead = enemySnakeHeads[index];
-    if (directMovementBetweenCoords(space, enemySnakeHead) == 1) {
+    if (distanceBetweenCoords(space, enemySnakeHead) == 1) {
       // An enemy snake head is beside this space
       return true;
     }
@@ -300,6 +273,143 @@ const getSpaceByCoordinates = (displayBoard: DisplayBoard, x: number, y: number)
     return null;
   }
   return displayBoard[y][x];
+};
+
+const recursivelyFindSafePathWithMaxDepth = (displayBoard: DisplayBoard, startingCoord: Coord, maxDepth: number): any => {
+
+  const longestSafePathPerDirection: any = {};
+
+  // do stuff, calling all four directions
+
+  longestSafePathPerDirection['up'] = findLongestSafePathWithMaxDepthHelper(displayBoard, [], 'up', maxDepth, 0, startingCoord.x, startingCoord.y + 1);
+  longestSafePathPerDirection['down'] = findLongestSafePathWithMaxDepthHelper(displayBoard, [], 'down', maxDepth, 0, startingCoord.x, startingCoord.y - 1);
+  longestSafePathPerDirection['right'] = findLongestSafePathWithMaxDepthHelper(displayBoard, [], 'right', maxDepth, 0, startingCoord.x + 1, startingCoord.y);
+  longestSafePathPerDirection['left'] = findLongestSafePathWithMaxDepthHelper(displayBoard, [], 'left', maxDepth, 0, startingCoord.x - 1, startingCoord.y);
+
+  const longerPathOptions: { [key: number]: any } = {};
+  const lastUpCoord = longestSafePathPerDirection['up'][longestSafePathPerDirection['up'].length -1];
+  // longerPathOptions[distanceBetweenCoords(startingCoord, lastUpCoord)] = ;
+  // Working on this, trying to get the longest path where the end of that path is the farthest away from the current position. *******
+
+
+  const sortedPathOptions = Object.entries(longerPathOptions).sort((a, b) => parseInt(b[0]) - parseInt(a[0]));
+  for (let index = 0; index < sortedPathOptions.length; index++) {
+    const arrayElement = sortedPathOptions[index];
+    const pathOptions = arrayElement[1];
+    // if multiple paths were found with the same length, just use a random one to keep them on their toes. Unable to know which is really the 'best'
+    // (if it's only one path, it will be used)
+    const randomPath = pathOptions[Math.floor(Math.random() * pathOptions.length)];
+    return randomPath;
+  }
+
+  console.log('best path returned for up:', longestSafePathPerDirection['up'])
+  console.log('best path returned for down:', longestSafePathPerDirection['down'])
+  console.log('best path returned for right:', longestSafePathPerDirection['right'])
+  console.log('best path returned for left:', longestSafePathPerDirection['left'])
+
+};
+
+const findLongestSafePathWithMaxDepthHelper = (displayBoard: DisplayBoard, path: any, direction: string, maxDepth: number, currentDepth: number, x: number, y: number): any => {
+  const space = getSpaceByCoordinates(displayBoard, x, y);
+  // TODO: add typing? should be an array of objects like [{}]
+  const currentPath: any[] = [...path];
+  
+  if (currentDepth == maxDepth) {
+    // short circut based on max depth to not go on forever
+    return path;
+  }
+
+  if (space) {
+    if (['hazard', 'snake'].includes(space.type)) {
+      // bad space, end path calc
+      return null;
+    }
+    // TODO: type this? should be an object with array keys being the lenght of the path, and the value being an array of the paths of that length
+    const longerPathOptions: { [key: number]: any } = {};
+
+    const currentCoord = space.coord;
+    // add the coord for the current space to the current path
+    currentPath.push(currentCoord);
+
+    // TODO: find a way to make this not 4 of the same thing, but maybe a loop?
+
+    // Call the method with coordinates for the space above, but only if we didn't move down to get to this space (avoid backwards) and haven't visited the space before (not already in our path)
+    if (direction != 'down' && currentPath.findIndex(item => areCoordsEqual(item, { x: currentCoord.x, y: currentCoord.y + 1 })) == -1) {
+      const upPath: any[]|null = findLongestSafePathWithMaxDepthHelper(displayBoard, currentPath, 'up', maxDepth, currentDepth + 1, x, y + 1);
+      if (upPath != null && upPath.length > currentPath.length) {
+        // if the path returned is not null, and is longer than our current path
+        // either add it the array at it's lenght index in longerPathOptions, or create the array at the index if it doesn't exist yet
+        if (longerPathOptions[upPath.length] == null) {
+          longerPathOptions[upPath.length] = [upPath];
+        } else {
+          longerPathOptions[upPath.length].push(upPath);
+        }
+      }
+    }
+
+    // Call the method with coordinates for the space below, but only if we didn't move up to get to this space (avoid backwards) and haven't visited the space before (not already in our path)
+    if (direction != 'up' && currentPath.findIndex(item => areCoordsEqual(item, { x: currentCoord.x, y: currentCoord.y - 1 })) == -1) {
+      const downPath: any[]|null = findLongestSafePathWithMaxDepthHelper(displayBoard, currentPath, 'down', maxDepth, currentDepth + 1, x, y - 1);
+      if (downPath != null && downPath.length > currentPath.length) {
+        // if the path returned is not null, and is longer than our current path
+        // either add it the array at it's lenght index in longerPathOptions, or create the array at the index if it doesn't exist yet
+        if (longerPathOptions[downPath.length] == null) {
+          longerPathOptions[downPath.length] = [downPath];
+        } else {
+          longerPathOptions[downPath.length].push(downPath);
+        }
+      }
+    }
+
+    // Call the method with coordinates for the space to the right, but only if we didn't move left to get to this space (avoid backwards) and haven't visited the space before (not already in our path)
+    if (direction != 'left' && currentPath.findIndex(item => areCoordsEqual(item, { x: currentCoord.x + 1, y: currentCoord.y })) == -1) {
+      const rightPath: any[]|null = findLongestSafePathWithMaxDepthHelper(displayBoard, currentPath, 'right', maxDepth, currentDepth + 1, x + 1, y);
+      if (rightPath != null && rightPath.length > currentPath.length) {
+        // if the path returned is not null, and is longer than our current path
+        // either add it the array at it's lenght index in longerPathOptions, or create the array at the index if it doesn't exist yet
+        if (longerPathOptions[rightPath.length] == null) {
+          longerPathOptions[rightPath.length] = [rightPath];
+        } else {
+          longerPathOptions[rightPath.length].push(rightPath);
+        }
+      }
+    }
+
+    // Call the method with coordinates for the space to the left, but only if we didn't move right to get to this space (avoid backwards) and haven't visited the space before (not already in our path)
+    if (direction != 'right' && currentPath.findIndex(item => areCoordsEqual(item, { x: currentCoord.x - 1, y: currentCoord.y })) == -1) {
+      const leftPath: any[]|null = findLongestSafePathWithMaxDepthHelper(displayBoard, currentPath, 'left', maxDepth, currentDepth + 1, x - 1, y);
+      if (leftPath != null && leftPath.length > currentPath.length) {
+        // if the path returned is not null, and is longer than our current path
+        // either add it the array at it's lenght index in longerPathOptions, or create the array at the index if it doesn't exist yet
+        if (longerPathOptions[leftPath.length] == null) {
+          longerPathOptions[leftPath.length] = [leftPath];
+        } else {
+          longerPathOptions[leftPath.length].push(leftPath);
+        }
+      }
+    }
+
+    // TODO: potential improvement, pass down the initial space (head of snake) and calculate which path (after the sort for longest) is the farthest away
+    // from our starting postion (can use the method used for food distance), so we can hopefully determine a 'best' path, more so than random, as some
+    // options may just be going in a circle in a bad spot
+
+    // After collecting all the different path options, sort and try to use longest path
+    const sortedPathOptions = Object.entries(longerPathOptions).sort((a, b) => parseInt(b[0]) - parseInt(a[0]));
+    for (let index = 0; index < sortedPathOptions.length; index++) {
+      const arrayElement = sortedPathOptions[index];
+      const pathOptions = arrayElement[1];
+      // if multiple paths were found with the same length, just use a random one to keep them on their toes. Unable to know which is really the 'best'
+      // (if it's only one path, it will be used)
+      const randomPath = pathOptions[Math.floor(Math.random() * pathOptions.length)];
+      return randomPath;
+    }
+
+    // If no longer paths were found and used above, just return our current path
+    return currentPath;
+  } else {
+    // The request space is out of the bounds of the board.
+    return null;
+  }
 };
 
 const recursivePathFinding = (displayBoard: DisplayBoard, theRecord: any, direction: string, x: number, y: number): any => {
@@ -432,3 +542,144 @@ const shouldPathFind = (gameState: GameState): boolean => {
  * Notes:
  * x is 0 to board length, left to right, y is 0 to board height from bottom to top, so 0,0 is the bottom left corner
  */
+
+// This is an old version of the move function for posterity
+// function move(gameState: GameState): MoveResponse {
+//   const displayBoard = generateDisplayBoard(gameState);
+//   // displayBoardState(gameState, displayBoard);
+
+//   // Setup variables
+//   const mySnake = gameState.you;
+//   const myHead = mySnake.body[0];
+//   const myTail = mySnake.body[mySnake.body.length - 1];
+//   const allSnakes = gameState.board.snakes;
+//   const enemySnakeHeads: Coord[] = [];
+//   const maxValueY = gameState.board.height - 1; // board coordinates are zero indexed
+//   const maxValueX = gameState.board.width - 1; // board coordinates are zero indexed
+//   const foodSpaces = gameState.board.food;
+
+//   let isMoveSafe: { [key: string]: boolean; } = {
+//     up: true,
+//     down: true,
+//     left: true,
+//     right: true
+//   };
+
+//   const nearbySpaces: { [key: string]: Coord; } = {
+//     up: { ...myHead, y: myHead.y + 1},
+//     down: { ...myHead, y: myHead.y - 1},
+//     left: { ...myHead, x: myHead.x - 1},
+//     right: { ...myHead, x: myHead.x + 1},
+//   };
+
+//   // Only do path finding if there are hazards (ex. maze), doing this path finding on an open grid takes way to much effort
+//   if (shouldPathFind(gameState)) {
+//     // this should contain up to the 4 directions ( up, down, left, right), and a path array?
+//     let theRecord: any = {}; // get an actual type for this later.....
+//     theRecord['up'] = recursivePathFinding(displayBoard, theRecord, 'up', myHead.x, myHead.y + 1);
+//     theRecord['down'] = recursivePathFinding(displayBoard, theRecord, 'down', myHead.x, myHead.y - 1);
+//     theRecord['left'] = recursivePathFinding(displayBoard, theRecord, 'left', myHead.x - 1, myHead.y);
+//     theRecord['right'] = recursivePathFinding(displayBoard, theRecord, 'right', myHead.x + 1, myHead.y);
+//     console.log('the record after recuse', theRecord)
+//     const shortestPath = getShortestPathFromRecord(theRecord);
+//     console.log('shortest determined path is:', shortestPath);
+//     // TODO: this null check might be unecessary later if the code is improved.
+//     if (shortestPath != null) {
+//       const shortestDirection = Object.keys(shortestPath[0])[0];
+//       console.log('found the shortest path to the food!')
+//       console.log(`MOVE ${gameState.turn}: ${shortestDirection}`);
+//       return { move: shortestDirection };
+//     }
+//   } 
+
+//   // Get array of all currently blocked spaces, currently includes all snake bodies
+//   let blockedSpaces: Coord[] = [];
+//   for (let index = 0; index < allSnakes.length; index++) {
+//     const snake = allSnakes[index];
+//     if (snake.id != mySnake.id) {
+//       // This is an enemy snake
+//       enemySnakeHeads.push(snake.body[0])
+//     }
+//     // Add body of snake to blocked spaces
+//     blockedSpaces = [...blockedSpaces, ...snake.body];
+//   }
+//   // Add hazards to blocked spaces
+//   blockedSpaces = [...blockedSpaces, ...gameState.board.hazards];
+
+//   // filter blockedSpaces to remove duplciate values (start of game as all parts of a snake in the same square)
+//   blockedSpaces = blockedSpaces.filter((blockedSpace, index, self) => {
+//     return self.findIndex(item => areCoordsEqual(item, blockedSpace)) === index
+//   });
+
+//   // Main movement logic:
+
+//   // Loop through nearby spaces to check if they are they are safe to move:
+//   Object.entries(nearbySpaces).forEach(([direction, nearbySpace]) => {
+//     // Can't move in given direction beacuse that space is off of the board.
+//     if ((nearbySpace.x < 0 || nearbySpace.x > maxValueX) || (nearbySpace.y < 0 || nearbySpace.y > maxValueY)) {
+//       isMoveSafe[direction] = false;
+//       return;
+//     }
+
+//     // if the current nearby space is found in the array of blocked spaces then we can't move there
+//     if (blockedSpaces.findIndex(item => areCoordsEqual(item, nearbySpace)) != -1) {
+//       isMoveSafe[direction] = false;
+//       return;
+//     }
+//   });
+
+//   // Are there any safe moves left?
+//   const safeMoves = Object.keys(isMoveSafe).filter(key => isMoveSafe[key]);
+//   if (safeMoves.length == 0) {
+//     // If there are no safe moves, move down by default.
+//     let forcedDirection = 'down';
+
+//     Object.entries(nearbySpaces).forEach(([direction, nearbySpace]) => {
+//       // If own snake tail is on one of the nearby spaces try moving there as it should be safe unless you ate food last turn (fingers crossed)
+//       if (areCoordsEqual(nearbySpace, myTail)) {
+//         forcedDirection = direction;
+//       }
+//     });
+
+//     console.log(`MOVE ${gameState.turn}: No safe moves detected! Moving ${forcedDirection}`);
+//     return { move: forcedDirection };
+//   } else if (safeMoves.length == 1) {
+//     console.log(`MOVE ${gameState.turn}: ${safeMoves[0]} (only safe move detected!)`);
+//     return { move: safeMoves[0] };
+//   }
+
+//   // Only run food logic if there is food on the board.
+//   if (foodSpaces.length != 0) {
+//     const minimumFoodMovesPerDirection: { [key: string]: number; } = {};
+
+//     // For given safe moves, see which move makes you closest to a piece of food and move that way?
+//     safeMoves.forEach(direction => {
+//       const nearbySpace = nearbySpaces[direction];
+//       // set to max amount of board movement as a default value
+//       minimumFoodMovesPerDirection[direction] = gameState.board.height * gameState.board.width;
+//       foodSpaces.forEach(foodSpace => {
+//         const numberOfMoves = distanceBetweenCoords(nearbySpace, foodSpace);
+//         minimumFoodMovesPerDirection[direction] = Math.min(minimumFoodMovesPerDirection[direction], numberOfMoves);
+//       });
+//     })
+//     const sortedFoodMoves = Object.entries(minimumFoodMovesPerDirection).sort((a, b) => a[1] - b[1]);
+
+//     for (let index = 0; index < sortedFoodMoves.length; index++) {
+//       const foodMove = sortedFoodMoves[index];
+//       const direction = foodMove[0];
+//       const nearbySpace = nearbySpaces[direction];
+  
+//       if (!isSpaceNextToEnemySnakeHead(nearbySpace, enemySnakeHeads)) {
+//         // Food is on a nearby space and there isn't an enemy snake that could move to that space.
+//         console.log(`MOVE ${gameState.turn}: ${direction}`);
+//         return { move: direction };
+//       }
+//     }
+//   }
+
+//   // If there was no 'safe' direction to take towards a piece of food, randomly move in any direction determined as safe:
+//   const nextMove = safeMoves[Math.floor(Math.random() * safeMoves.length)];
+
+//   console.log(`MOVE ${gameState.turn}: ${nextMove} - Random Direction`)
+//   return { move: nextMove };
+// }
